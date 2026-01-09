@@ -1,0 +1,406 @@
+// Sistem Informasi Manajemen Peternakan Ayam Petelur
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== MANAJEMEN PENGGUNA ====================
+
+enum Role {
+  SUPER_USER
+  ADMIN
+  PETUGAS
+  PIMPINAN
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      Role     @default(PETUGAS)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dataHarian          DataHarian[]
+  penjualan           Penjualan[]
+  pemasukan           Pemasukan[]
+  pengeluaran         Pengeluaran[]
+  kesehatanAyam       KesehatanAyam[]
+}
+
+// ==================== PENGATURAN AKSES ====================
+
+model RolePermission {
+  id          String   @id @default(cuid())
+  role        Role
+  fitur       String   // nama fitur/module
+  bisaAkses   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([role, fitur])
+}
+
+// ==================== MANAJEMEN KANDANG ====================
+
+enum JenisKandang {
+  LITER
+  BATERAI
+  KOLONY
+}
+
+model Kandang {
+  id          String      @id @default(cuid())
+  nama        String      @unique
+  jenis       JenisKandang
+  kapasitas   Int
+  jumlahAyam  Int         @default(0)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  dataHarian  DataHarian[]
+  jadwalVaksin JadwalVaksin[]
+
+  @@index([nama])
+}
+
+// ==================== MANAJEMEN STOK ====================
+
+enum JenisStok {
+  BAHAN_BAKU_PAKAN
+  PAKAN_JADI
+  TELUR
+  OBAT
+  PETI_TELUR
+}
+
+model Stok {
+  id          String      @id @default(cuid())
+  jenis       JenisStok
+  nama        String
+  jumlah      Float       @default(0)
+  satuan      String      // kg, butir, box, dll
+  hargaSatuan Float?
+  keterangan  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([jenis, nama])
+}
+
+// ==================== BAHAN BAKU PAKAN ====================
+
+model BahanBakuPakan {
+  id          String    @id @default(cuid())
+  nama        String    @unique
+  hargaPerKg  Float
+  jumlah      Float     @default(0)
+  satuan      String    @default("kg")
+  nutrisi     String?   // JSON string untuk nutrisi
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  formulasiPakan FormulasiPakan[]
+}
+
+// ==================== FORMULASI PAKAN ====================
+
+model FormulasiPakan {
+  id              String   @id @default(cuid())
+  nama            String
+  bahanBakuId     String
+  persentase      Float
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bahanBaku       BahanBakuPakan @relation(fields: [bahanBakuId], references: [id])
+}
+
+// ==================== MANAJEMEN TELUR ====================
+
+enum JenisTelur {
+  BAGUS
+  BENTES
+  CREAM
+}
+
+model StokTelur {
+  id          String    @id @default(cuid())
+  jenis       JenisTelur
+  jumlah      Float     @default(0)
+  satuan      String    @default("butir")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([jenis])
+}
+
+// ==================== HARGA TELUR ====================
+
+model HargaTelur {
+  id          String    @id @default(cuid())
+  jenis       JenisTelur
+  hargaPerKg  Float
+  hargaPerPeti Float?   // 25 kg
+  tanggal     DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  @@index([tanggal])
+  @@index([jenis, tanggal])
+}
+
+// ==================== DATA HARIAN ====================
+
+model DataHarian {
+  id              String      @id @default(cuid())
+  kandangId       String
+  tanggal         DateTime    @default(now())
+  userId          String
+
+  // Produksi telur
+  telurBagus      Int         @default(0)
+  telurBentes     Int         @default(0)
+  telurCream      Int         @default(0)
+
+  // Pakan
+  bahanBakuPakan  Float       @default(0)  // kg
+  pakanJadi       Float       @default(0)  // kg
+
+  // Ayam
+  kematian        Int         @default(0)
+  afkir           Int         @default(0)
+
+  // Vaksinasi
+  vaksinasi       String?     // nama vaksin
+  jumlahVaksin    Int         @default(0)
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  kandang         Kandang     @relation(fields: [kandangId], references: [id])
+  user            User        @relation(fields: [userId], references: [id])
+
+  @@index([kandangId, tanggal])
+  @@index([tanggal])
+}
+
+// ==================== PENJUALAN ====================
+
+enum StatusPesanan {
+  PENDING
+  DIPROSES
+  DIKIRIM
+  SELESAI
+  DIBATALKAN
+}
+
+model Pesanan {
+  id            String        @id @default(cuid())
+  nomorPesanan  String        @unique
+  tanggal       DateTime      @default(now())
+  pelanggan     String
+  kontak        String?
+  alamat        String?
+  status        StatusPesanan @default(PENDING)
+  totalHarga    Float         @default(0)
+  dibayar       Float         @default(0)
+  keterangan    String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  detailPesanan DetailPesanan[]
+}
+
+model DetailPesanan {
+  id          String    @id @default(cuid())
+  pesananId   String
+  jenisBarang String    // telur_kg, telurpeti, ayam_afkir, ayam_pulet
+  jumlah      Float
+  satuan      String
+  hargaSatuan Float
+  subtotal    Float
+  keterangan  String?
+  createdAt   DateTime  @default(now())
+
+  pesanan     Pesanan   @relation(fields: [pesananId], references: [id])
+}
+
+model Penjualan {
+  id            String    @id @default(cuid())
+  nomorInvoice  String    @unique
+  tanggal       DateTime  @default(now())
+  pelanggan     String
+  userId        String
+
+  // Detail barang
+  telurKg       Float     @default(0)
+  telurPeti     Float     @default(0)
+  ayamAfkir     Int       @default(0)
+  ayamPulet     Int       @default(0)
+
+  totalHarga    Float     @default(0)
+  dibayar       Float     @default(0)
+  sisa          Float     @default(0)
+  keterangan    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@index([tanggal])
+  @@index([nomorInvoice])
+}
+
+// ==================== MANAJEMEN KEUANGAN ====================
+
+enum JenisPemasukan {
+  PENJUALAN_TELUR
+  PENJUALAN_AYAM_AFKIR
+  PENJUALAN_AYAM_PULET
+  LAINNYA
+}
+
+model Pemasukan {
+  id            String        @id @default(cuid())
+  nomorBukti    String        @unique
+  tanggal       DateTime      @default(now())
+  jenis         JenisPemasukan
+  jumlah        Float
+  keterangan    String?
+  userId        String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id])
+
+  @@index([tanggal])
+  @@index([jenis])
+}
+
+enum JenisPengeluaran {
+  PEMBELIAN_PAKAN
+  PEMBELIAN_OBAT
+  PEMBELIAN_BAHAN_BAKU
+  GAJI_KARYAWAN
+  LISTRIK_AIR
+  LAINNYA
+}
+
+model Pengeluaran {
+  id            String          @id @default(cuid())
+  nomorBukti    String          @unique
+  tanggal       DateTime        @default(now())
+  jenis         JenisPengeluaran
+  jumlah        Float
+  keterangan    String?
+  userId        String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  user          User            @relation(fields: [userId], references: [id])
+
+  @@index([tanggal])
+  @@index([jenis])
+}
+
+model Piutang {
+  id            String    @id @default(cuid())
+  pelanggan     String
+  jumlah        Float
+  jatuhTempo    DateTime
+  sudahBayar    Float     @default(0)
+  sisa          Float
+  keterangan    String?
+  status        String    @default("BELUM_LUNAS") // BELUM_LUNAS, LUNAS
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([jatuhTempo])
+  @@index([status])
+}
+
+model Utang {
+  id            String    @id @default(cuid())
+  pemasok       String
+  jumlah        Float
+  jatuhTempo    DateTime
+  sudahBayar    Float     @default(0)
+  sisa          Float
+  keterangan    String?
+  status        String    @default("BELUM_LUNAS") // BELUM_LUNAS, LUNAS
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([jatuhTempo])
+  @@index([status])
+}
+
+// ==================== MANAJEMEN KESEHATAN ====================
+
+model JadwalVaksin {
+  id          String    @id @default(cuid())
+  kandangId   String
+  namaVaksin  String
+  tanggalJadwal DateTime
+  tanggalSelesai DateTime?
+  jumlahAyam  Int
+  keterangan String?
+  status      String    @default("TERJADWAL") // TERJADWAL, SELESAI, DITUNDA
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  kandang     Kandang   @relation(fields: [kandangId], references: [id])
+
+  @@index([tanggalJadwal])
+  @@index([kandangId])
+}
+
+model KesehatanAyam {
+  id          String    @id @default(cuid())
+  kandangId   String
+  tanggal     DateTime  @default(now())
+  userId      String
+
+  // Data ayam sakit
+  ayamSakit   Int       @default(0)
+  gejala      String?
+  diagnosa    String?
+
+  // Data ayam sembuh
+  ayamSembuh  Int       @default(0)
+
+  // Pengobatan
+  obat        String?
+  dosis       String?
+
+  keterangan  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([kandangId, tanggal])
+  @@index([tanggal])
+}
+
+// ==================== AI ANALYSIS ====================
+
+model AIAnalysis {
+  id          String    @id @default(cuid())
+  jenisAnalisis String  // FEED_OPTIMIZATION, PRODUCTION_PREDICTION, COST_ANALYSIS, dll
+  tanggal     DateTime  @default(now())
+  hasil       String    // JSON string
+  rekomendasi String?
+  createdAt   DateTime  @default(now())
+
+  @@index([jenisAnalisis])
+  @@index([tanggal])
+}
